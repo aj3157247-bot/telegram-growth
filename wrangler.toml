@@ -1,0 +1,17 @@
+name = "telegram-growth-manager"
+main = "src/index.js"
+compatibility_date = "2026-11-05"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "telegram-growth-manager-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+BOT_NAME = "Growth Manager"
+ANTI_LINK = "true"
+ANTI_FLOOD = "true"
+FLOOD_MAX_MESSAGES = "5"
+FLOOD_WINDOW_SECONDS = "8"
+WELCOME_ENABLED = "true"
+BLOCKED_WORDS = ""

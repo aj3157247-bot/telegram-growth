@@ -1,7 +1,4 @@
+node_modules/
+.wrangler/
+.dev.vars
 .env
-.venv/
-__pycache__/
-*.pyc
-data/
-.idea/
-.vscode/
