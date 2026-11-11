@@ -34,6 +34,7 @@ const menu = () => ({ inline_keyboard: [
   [{ text: "👥 گروه‌ها و کانال‌های متصل", callback_data: "chats" }],
   [{ text: "🔗 ساخت لینک دعوت", callback_data: "invite_menu" }],
   [{ text: "📊 آمار کلی", callback_data: "stats" }],
+  [{ text: "🚀 رشد خودکار ۲۴ ساعته", callback_data: "growth" }],
   [{ text: "🛡 راهنمای مدیریت", callback_data: "help" }],
 ] });
 const back = () => ({ inline_keyboard: [[{ text: "⬅️ بازگشت", callback_data: "home" }]] });
@@ -100,6 +101,12 @@ async function handleCallback(env, q) {
     } catch (e) {
       await answer(env, m.chat.id, `ساخت لینک ناموفق بود. بررسی کن ربات مدیر گروه و دارای دسترسی دعوت اعضا باشد.\n\n${esc(e.message)}`);
     }
+  } else if (data === "growth") {
+    const { results = [] } = await env.DB.prepare("SELECT target, target_type, interval_hours, enabled, last_sent_at FROM growth_targets ORDER BY target_type").all();
+    const total = await env.DB.prepare("SELECT COUNT(*) n FROM growth_posts").first();
+    const rows = results.map(r => `${r.target_type === "channel" ? "📢 کانال" : "👥 گروه"}: ${esc(r.target)} — ${r.enabled ? "فعال" : "متوقف"} — هر ${r.interval_hours} ساعت`);
+    await editOrSend(env, m.chat.id, m.message_id,
+      `🚀 <b>سیستم رشد خودکار</b>\n${rows.join("\n") || "هنوز مقصدی تنظیم نشده است."}\n\nپست‌های خودکار موفق: <b>${total?.n || 0}</b>\n\nکانال هر ۸ ساعت و گروه هر ۲۴ ساعت معرفی می‌شود. زمان‌بندی با Cron کلودفلر انجام می‌شود.`, menu());
   } else if (data === "stats") {
     const chats = await env.DB.prepare("SELECT COUNT(*) n FROM chats WHERE is_active=1").first();
     const members = await env.DB.prepare("SELECT COUNT(*) n FROM members WHERE status='member'").first();
@@ -217,7 +224,46 @@ async function processUpdate(env, upd) {
   if (isGroup(msg.chat)) return handleGroupMessage(env, msg);
 }
 
+const CHANNEL_PROMOS = [
+  "🌟 <b>بازارک؛ خرید و فروش آسان</b>\n\nبرای دیدن آگهی‌ها و پیشنهادهای تازه، به کانال ما سر بزنید:\n👉 <a href=\"https://t.me/MyBazarek\">کانال بازارک</a>\n\nبرای گفتگو و ارتباط با اعضا نیز به گروه ما بپیوندید:\n👥 <a href=\"https://t.me/mybazarek2026\">گروه بازارک</a>",
+  "🛍️ دنبال خرید خوب یا معرفی محصول خود هستید؟\n\nدر بازارک می‌توانید آگهی‌ها را ببینید و محصولات‌تان را معرفی کنید.\n📢 <a href=\"https://t.me/MyBazarek\">دنبال‌کردن کانال بازارک</a>\n👥 <a href=\"https://t.me/mybazarek2026\">پیوستن به گروه بازارک</a>",
+  "📣 بازارک را به دوستان خود معرفی کنید!\n\nبا پیوستن به کانال از آگهی‌ها و خبرهای تازه باخبر شوید و در گروه با دیگر اعضا ارتباط بگیرید.\n📢 <a href=\"https://t.me/MyBazarek\">کانال</a> | 👥 <a href=\"https://t.me/mybazarek2026\">گروه</a>",
+];
+const GROUP_PROMOS = [
+  "🌱 به جمع بازارک خوش آمدید!\n\nبرای دیدن آگهی‌ها و پیشنهادهای تازه، کانال ما را هم دنبال کنید: https://t.me/MyBazarek\nلطفاً گروه را به دوستان علاقه‌مند معرفی کنید؛ از ارسال پیام تکراری و تبلیغات ناخواسته خودداری کنید.",
+  "🛍️ می‌خواهید آگهی‌های تازه بازارک را از دست ندهید؟\nکانال ما را دنبال کنید: https://t.me/MyBazarek\nبرای خرید و فروش، گفتگو و پرسش از اعضا همین‌جا فعال باشید.",
+];
+
+async function runGrowthSchedule(env, scheduledTime = Date.now()) {
+  if (!env.DB || !env.BOT_TOKEN) throw new Error("Missing DB or BOT_TOKEN for scheduled growth posts");
+  const { results = [] } = await env.DB.prepare(
+    "SELECT target, target_type, interval_hours, enabled, last_sent_at, last_message_index FROM growth_targets WHERE enabled=1"
+  ).all();
+  const now = Number(scheduledTime);
+  for (const target of results) {
+    const last = target.last_sent_at ? Date.parse(target.last_sent_at.replace(" ", "T") + (target.last_sent_at.endsWith("Z") ? "" : "Z")) : 0;
+    const intervalMs = Math.max(1, Number(target.interval_hours) || 24) * 60 * 60 * 1000;
+    if (last && now - last < intervalMs) continue;
+    const templates = target.target_type === "channel" ? CHANNEL_PROMOS : GROUP_PROMOS;
+    const nextIndex = ((Number(target.last_message_index) || 0) + 1) % templates.length;
+    try {
+      await answer(env, target.target, templates[nextIndex]);
+      await env.DB.prepare("UPDATE growth_targets SET last_sent_at=CURRENT_TIMESTAMP, last_message_index=? WHERE target=?")
+        .bind(nextIndex, target.target).run();
+      await env.DB.prepare("INSERT INTO growth_posts(target, target_type, message_index, status) VALUES(?,?,?, 'sent')")
+        .bind(target.target, target.target_type, nextIndex).run();
+    } catch (e) {
+      await env.DB.prepare("INSERT INTO growth_posts(target, target_type, message_index, status, error) VALUES(?,?,?, 'failed', ?)")
+        .bind(target.target, target.target_type, nextIndex, String(e?.message || e).slice(0, 500)).run();
+      console.error("Growth post failed for", target.target, e?.message || e);
+    }
+  }
+}
+
 export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(runGrowthSchedule(env, controller?.scheduledTime || Date.now()));
+  },
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ ok: true, service: "telegram-growth-manager-worker" });
