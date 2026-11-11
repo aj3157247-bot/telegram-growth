@@ -47,3 +47,29 @@ CREATE TABLE IF NOT EXISTS flood_events (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_flood_lookup ON flood_events(chat_id, user_id, created_at);
+
+
+-- 24/7 organic growth publishing targets. The first target is treated as a public channel,
+-- the second as a public group; change target_type if the user's link roles are reversed.
+CREATE TABLE IF NOT EXISTS growth_targets (
+  target TEXT PRIMARY KEY,
+  target_type TEXT NOT NULL CHECK(target_type IN ('channel','group')),
+  interval_hours INTEGER NOT NULL DEFAULT 24,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_sent_at TEXT,
+  last_message_index INTEGER NOT NULL DEFAULT -1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO growth_targets(target, target_type, interval_hours, enabled)
+VALUES ('@MyBazarek', 'channel', 8, 1), ('@mybazarek2026', 'group', 24, 1);
+
+CREATE TABLE IF NOT EXISTS growth_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  message_index INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  error TEXT,
+  sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_growth_posts_target_time ON growth_posts(target, sent_at);
