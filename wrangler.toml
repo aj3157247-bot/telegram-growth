@@ -5,7 +5,8 @@ compatibility_date = "2026-11-05"
 [[d1_databases]]
 binding = "DB"
 database_name = "telegram-growth-manager-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id ="924b675d-cf8c-42c4-a653-34157c7a95a8"
+    }
 
 [vars]
 BOT_NAME = "Growth Manager"
